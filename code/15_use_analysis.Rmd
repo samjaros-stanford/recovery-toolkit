@@ -1,0 +1,123 @@
+
+```{r setup}
+library(tidyverse)
+
+full_data = read_csv(here::here("data/primary_data.csv"))
+```
+
+**NOTE:** The toolkit use question for 1-month follow-up was added April 8 2019
+
+```{r followup_use}
+# NOTE: These data will not include patients who didn't respond to 1-month followup
+fu_use_data = full_data %>%
+  mutate(age_cat = factor(case_when(
+           age<50 ~ "<50",
+           age<60 ~ "50-59",
+           age<70 ~ "60-69",
+           age>=70 ~ ">=70",
+           T      ~ NA_character_
+         ), levels=c("<50", "50-59", "60-69", ">=70")),
+         raceeth = factor(case_match(raceeth,
+                                     "African American" ~ "Other",
+                                     .default = raceeth))) %>%
+  filter(tx_group == "RTK",
+         fu_date >= as.Date("2019-04-08")) %>%
+  select(gender, raceeth, age, age_cat, 
+         starts_with(c("fu_tx_use", "fu_tx_location")), fu_tx_notUse_text)
+
+fu_use_data_long = fu_use_data %>%
+  select(gender, raceeth, age, age_cat, fu_tx_used, starts_with(c("fu_tx_use_", "fu_tx_location_"))) %>%
+  pivot_longer(cols = c(-gender, -raceeth, -age, -age_cat),
+               names_to = "use_variable",
+               values_to = "use_indicator")
+
+# Overall percentages
+fu_use_data_long %>%
+  group_by(use_variable) %>%
+  summarize(n_pct = paste0(sum(use_indicator, na.rm=T), " (", round(sum(use_indicator, na.rm=T)/n()*100, 2), "%)"), .groups="keep")
+```
+
+```{r fu_use_gender}
+attach(fu_use_data)
+# By gender
+fu_use_data_long %>%
+  group_by(gender, use_variable) %>%
+  summarize(n_pct = paste0(sum(use_indicator, na.rm=T), " (", round(sum(use_indicator, na.rm=T)/n()*100, 2), "%)"), .groups="keep") %>%
+  pivot_wider(id_cols = use_variable,
+              names_from = gender,
+              values_from = n_pct)
+
+# Test differences in use
+chisq.test(gender, fu_tx_used)
+# Test differences in book
+chisq.test(gender, fu_tx_use_book)
+# Test differences in personal plan
+fisher.test(gender, fu_tx_use_personalPlan)
+# Test differences in relaxation app
+fisher.test(gender, fu_tx_use_relaxApp)
+# Test differences in videos
+fisher.test(gender, fu_tx_use_videos)
+# Test differences in "other" usage
+fisher.test(gender, fu_tx_use_other)
+# Test differences in use location
+fisher.test(gender, fu_tx_location)
+detach("fu_use_data")
+```
+
+```{r fu_use_raceeth}
+attach(fu_use_data)
+# By raceeth
+fu_use_data_long %>%
+  group_by(raceeth, use_variable) %>%
+  summarize(n_pct = paste0(sum(use_indicator, na.rm=T), " (", round(sum(use_indicator, na.rm=T)/n()*100, 2), "%)")) %>%
+  pivot_wider(id_cols = use_variable,
+              names_from = raceeth,
+              values_from = n_pct)
+
+# Test differences in use
+fisher.test(raceeth, fu_tx_used)
+# Test differences in book
+fisher.test(raceeth, fu_tx_use_book)
+# Test differences in personal plan
+fisher.test(raceeth, fu_tx_use_personalPlan)
+# Test differences in relaxation app
+fisher.test(raceeth, fu_tx_use_relaxApp)
+# Test differences in videos
+fisher.test(raceeth, fu_tx_use_videos)
+# Test differences in "other" usage
+fisher.test(raceeth, fu_tx_use_other)
+# Test differences in use location
+fisher.test(raceeth, fu_tx_location)
+detach("fu_use_data")
+```
+
+```{r fu_use_age}
+attach(fu_use_data)
+# By age category
+fu_use_data_long %>%
+  group_by(age_cat, use_variable) %>%
+  summarize(n_pct = paste0(sum(use_indicator, na.rm=T), " (", round(sum(use_indicator, na.rm=T)/n()*100, 2), "%)")) %>%
+  pivot_wider(id_cols = use_variable,
+              names_from = age_cat,
+              values_from = n_pct)
+
+# Test differences in use
+fisher.test(age_cat, fu_tx_used)
+# Test differences in book
+fisher.test(age_cat, fu_tx_use_book)
+# Test differences in personal plan
+fisher.test(age_cat, fu_tx_use_personalPlan)
+# Test differences in relaxation app
+fisher.test(age_cat, fu_tx_use_relaxApp)
+# Test differences in videos
+fisher.test(age_cat, fu_tx_use_videos)
+# Test differences in "other" usage
+fisher.test(age_cat, fu_tx_use_other)
+# Test differences in use location
+fisher.test(age_cat, fu_tx_location)
+detach("fu_use_data")
+```
+
+```{r fu_noUse}
+table(fu_use_data$fu_tx_notUse_text)
+```

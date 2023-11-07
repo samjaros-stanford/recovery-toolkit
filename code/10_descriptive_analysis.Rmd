@@ -1,0 +1,55 @@
+
+```{r setup}
+library(table1)
+library(tidyverse)
+
+full_data = read_csv(here::here("data/primary_data.csv"))
+```
+
+```{r table1}
+my_rend = function(x, name, ...) {
+  if(is.numeric(x)){
+    r = with(stats.default(x), 
+             c("", 
+               "Mean (SD)"=sprintf("%0.2f (%0.2f)", MEAN, SD),
+               "Median (IQR)"=sprintf("%0.2f (%0.2f-%0.2f)", MEDIAN, Q1, Q3)))
+  } else {
+    r= c("", 
+         sapply(stats.default(x), 
+                function(y) with(y, sprintf("%d (%0.2f%%)", FREQ, PCT))))
+  }
+  if(any(is.na(x))){
+    r = c(r, with(stats.default(is.na(x))$Yes,
+                  c(Missing=sprintf("%s (%0.2f%%)", FREQ, PCT))))
+  }
+  return(r)
+}
+
+table1(~ age + gender + raceeth +
+         surgery_type_fusion + surgery_type_laminectomy + surgery_type_disectomy + 
+         surgery_type_fractureReduction + surgery_type_foraminotomy + surgery_type_decompression + 
+         surgery_type_laminotomy + surgery_type_osteotomy + surgery_type_biopsy + 
+         surgery_type_kyphoplasty + surgery_type_facetectomy + surgery_type_other +
+         n_surg_types + length_of_stay + readmission + fu_complete | tx_group, 
+       data=full_data,
+       render=my_rend)
+```
+
+```{r outcomes}
+# Visualize post-operation day 1 data distribution, log looks much more normal
+hist(full_data$pod1_med)
+hist(log(full_data$pod1_med))
+
+# Visualize primary outcome data data distribution, log looks much more normal
+hist(full_data$fu_med)
+hist(log(full_data$fu_med))
+
+# Visualize difference as a possible endpoint
+# Not great, tails too sparse
+hist(full_data$pod1_med-full_data$fu_med)
+
+ggplot(full_data, aes(x=tx_group, y=pod1_med)) +
+  geom_boxplot()
+wilcox.test(pod1_med~tx_group, data=full_data)
+wilcox.test(fu_med~tx_group, data=full_data)
+```

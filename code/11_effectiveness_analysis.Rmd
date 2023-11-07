@@ -1,0 +1,150 @@
+---
+title: "Effectiveness Analysis"
+author: "Sam Jaros"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup}
+library(tidyverse)
+
+full_data = readRDS(here::here("data/primary_data.rds")) %>%
+  mutate(pod1_med_log = if_else(pod1_med==0,0,log(pod1_med)),
+         fu_med_log = if_else(fu_med==0,NA_real_,log(fu_med)))
+```
+
+MED is zero-weighted and right skewed. Therefore, I am splitting it into an indicator variable (any opioids yes/no) and a log-transformed continuous variable. Log transformation is being done to force normality and heteroskedacitiy.
+
+The models are being run in groups of three to look at three different levels of potential confounding. "Basic" only models the treatment group assignment and post-operation opioids. "Demog" controlls for the same as basic plus age, race/ethnicity, and gender. "Full" controlls for the same as demog plus number of surgery types and length of stay (as a proxy for surgical complexity).
+
+## Part 1: Any Opioids Taken
+
+```{r any_opioids}
+takingOp_fu_basic = glm(fu_taking_opioids~tx_group + pod1_med_log,
+                        family="binomial", data=full_data)
+#summary(takingOp_fu_basic)
+exp(coefficients(takingOp_fu_basic)[2])
+exp(confint(takingOp_fu_basic, 2))
+
+takingOp_fu_demog = glm(fu_taking_opioids~tx_group + age + raceeth + gender +
+                          pod1_med_log,
+                        family="binomial", data=full_data)
+#summary(takingOp_fu_demog)
+exp(coefficients(takingOp_fu_demog)[2])
+exp(confint(takingOp_fu_demog, 2))
+
+takingOp_fu_full = glm(fu_taking_opioids~tx_group + age + raceeth + gender +
+                          pod1_med_log + n_surg_types + length_of_stay,
+                        family="binomial", data=full_data)
+#summary(takingOp_fu_full)
+exp(coefficients(takingOp_fu_full)[2])
+exp(confint(takingOp_fu_full, 2))
+```
+
+## Part 2: Amount of Opioids Taken
+
+```{r amt_opioids}
+amtOp_fu_basic = glm(fu_med_log ~ tx_group + pod1_med_log,
+                     family=gaussian, data=full_data)
+#summary(amtOp_fu_basic)
+coef(amtOp_fu_basic)[2]
+confint(amtOp_fu_basic, 2)
+
+amtOp_fu_demog = glm(fu_med_log ~ tx_group + age + raceeth + gender +
+                       pod1_med_log,
+                     family=gaussian, data=full_data)
+#summary(amtOp_fu_demog)
+coef(amtOp_fu_demog)[2]
+confint(amtOp_fu_demog, 2)
+
+amtOp_fu_full = glm(fu_med_log ~ tx_group + age + raceeth + gender +
+                          pod1_med_log + n_surg_types + length_of_stay,
+                     family=gaussian, data=full_data)
+#summary(amtOp_fu_full)
+coef(amtOp_fu_full)[2]
+confint(amtOp_fu_full, 2)
+```
+
+## Correct for attrition
+
+65 controls (36.5%) and 69 RTK patients (33.7%) do not have 1-month follow-up data. This level of missingness is generally considered unacceptable. Therefore, we are applying inverse probability of censoring weighting (IPCW) to attempt to control for this censoring factor. This method will upweight people who were more likely to drop out, but didn't.
+
+```{r}
+IPCW_data = full_data %>%
+  drop_na(age, raceeth, gender, pod1_taking_opioids, pod1_med_log, n_surg_types, length_of_stay)
+
+# Model probability of having outcome data
+attr_mod1 = glm(fu_complete ~ tx_group + age + raceeth + gender + 
+                  pod1_taking_opioids + pod1_med_log + n_surg_types + length_of_stay,
+                family=binomial, data=IPCW_data)
+summary(attr_mod1)
+
+# Remove non-significant predictors
+attr_mod2 = glm(fu_complete ~ age + raceeth + pod1_taking_opioids + n_surg_types,
+                family=binomial, data=IPCW_data)
+summary(attr_mod2)
+
+IPCW_data$pred_attr = predict(attr_mod2, type="response")
+
+# Check for positivity
+summary(IPCW_data[IPCW_data$tx_group=="RTK",]$pred_attr)
+summary(IPCW_data[IPCW_data$tx_group=="Control",]$pred_attr)
+ggplot(IPCW_data, aes(x=pred_attr, fill=tx_group)) + geom_density(alpha=0.4) +
+  xlab("Predicted Attrition") + ylab("Proportion") + labs(fill="Current smoker") +
+  theme_minimal()
+IPCW_data$attr_logOdds = log(IPCW_data$pred_attr/(1-IPCW_data$pred_attr))
+ggplot(IPCW_data, aes(x=attr_logOdds)) + 
+  geom_point(aes(y=pred_attr), shape=21) + geom_point(aes(y=as.numeric(fu_complete)), shape=24) +
+  xlab("Log Odds of Attrition") + ylab("Propensity or Treated Value") +
+  theme_minimal()
+
+IPCW_data$IPAW = 1/IPCW_data$pred_attr
+summary(IPCW_data$IPAW)
+```
+
+## Rerun models using attrition weights
+
+```{r IPCW_mods}
+### Yes/No Taking opioids ###
+takingOp_IPCW_basic = glm(fu_taking_opioids ~ tx_group + pod1_med_log,
+                          weights=IPAW, family="quasibinomial", data=IPCW_data)
+#summary(takingOp_IPCW_basic)
+exp(coefficients(takingOp_IPCW_basic)[2])
+exp(confint(takingOp_IPCW_basic, 2))
+
+takingOp_IPCW_demog = glm(fu_taking_opioids ~ tx_group + pod1_med_log + age + raceeth + gender,
+                          weights=IPAW, family="quasibinomial", data=IPCW_data)
+#summary(takingOp_IPCW_demog)
+exp(coefficients(takingOp_IPCW_demog)[2])
+exp(confint(takingOp_IPCW_demog, 2))
+
+takingOp_IPCW_full = glm(fu_taking_opioids ~ tx_group + age + raceeth + gender +
+                          pod1_med_log + n_surg_types + length_of_stay,
+                         weights=IPAW, family="quasibinomial", data=IPCW_data)
+#summary(takingOp_IPCW_full)
+exp(coefficients(takingOp_IPCW_full)[2])
+exp(confint(takingOp_IPCW_full, 2))
+
+
+
+### MED Taken ###
+amtOp_IPCW_basic = glm(fu_med_log ~ tx_group + pod1_med_log,
+                       weight=IPAW, family=gaussian, data=IPCW_data)
+#summary(amtOp_IPCW_basic)
+coef(amtOp_IPCW_basic)[2]
+confint(amtOp_IPCW_basic, 2)
+
+amtOp_IPCW_demog = glm(fu_med_log ~ tx_group + age + raceeth + gender +
+                         pod1_med_log,
+                       weight=IPAW, family=gaussian, data=IPCW_data)
+#summary(amtOp_IPCW_demog)
+coef(amtOp_IPCW_demog)[2]
+confint(amtOp_IPCW_demog, 2)
+
+amtOp_IPCW_full = glm(fu_med_log ~ tx_group + age + raceeth + gender +
+                        pod1_med_log + n_surg_types + length_of_stay,
+                      weight=IPAW, family=gaussian, data=IPCW_data)
+#summary(amtOp_IPCW_full)
+coef(amtOp_IPCW_full)[2]
+confint(amtOp_IPCW_full, 2)
+```

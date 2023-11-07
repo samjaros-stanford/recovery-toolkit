@@ -1,0 +1,69 @@
+---
+title: "Per Protocol Analysis"
+author: "Sam Jaros"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup}
+library(tidyverse)
+
+pp_data = readRDS(here::here("data/primary_data.rds")) %>%
+  mutate(pod1_med_log = if_else(pod1_med==0,0,log(pod1_med)),
+         fu_med_log = if_else(fu_med==0,NA_real_,log(fu_med))) %>%
+  filter(tx_group=="Control" | fu_tx_used)
+```
+
+## Per Protocol Analysis
+
+To see if the treatment effects are even more extreme for those who reported using the treatment, I have restricted the treated group to only those who reported using the treatment at 1 month. The control group is the same.
+
+```{r restricted_takingOp}
+takingOp_pp_basic = glm(fu_taking_opioids~tx_group + pod1_med_log,
+                        family="binomial", data=pp_data)
+# summary(takingOp_pp_basic)
+exp(coefficients(takingOp_pp_basic)[2])
+exp(confint(takingOp_pp_basic, 2))
+
+takingOp_pp_demog = glm(fu_taking_opioids~tx_group + age + raceeth + gender +
+                          pod1_med_log,
+                        family="binomial", data=pp_data)
+# summary(takingOp_pp_demog)
+exp(coefficients(takingOp_pp_demog)[2])
+exp(confint(takingOp_pp_demog, 2))
+
+takingOp_pp_full = glm(fu_taking_opioids~tx_group + age + raceeth + gender +
+                          pod1_med_log + n_surg_types + length_of_stay,
+                        family="binomial", data=pp_data)
+# summary(takingOp_pp_full)
+exp(coefficients(takingOp_pp_full)[2])
+exp(confint(takingOp_pp_full, 2))
+```
+
+All of the confidence intervals cross 1 suggesting there is no significant effect of the treatment on odds of taking opioids at all when controlling for using the treatment at 1 month.
+
+## Part 2: Amount of Opioids Taken
+
+```{r restricted_amtOp}
+amtOp_pp_basic = glm(fu_med_log ~ tx_group + pod1_med_log,
+                     family=gaussian, data=pp_data)
+# summary(amtOp_pp_basic)
+coef(amtOp_pp_basic)[2]
+confint(amtOp_pp_basic, 2)
+
+amtOp_pp_demog = glm(fu_med_log ~ tx_group + age + raceeth + gender +
+                       pod1_med_log,
+                     family=gaussian, data=pp_data)
+# summary(amtOp_pp_demog)
+coef(amtOp_pp_demog)[2]
+confint(amtOp_pp_demog, 2)
+
+amtOp_pp_full = glm(fu_med_log ~ tx_group + age + raceeth + gender +
+                          pod1_med_log + n_surg_types + length_of_stay,
+                     family=gaussian, data=pp_data)
+# summary(amtOp_pp_full)
+coef(amtOp_pp_full)[2]
+confint(amtOp_pp_full, 2)
+```
+
+All of the confidence intervals cross zero which suggests there is no statistically significant effect of the treatment on amount of opioids taken when controlling for using the treatment at 1 month.
